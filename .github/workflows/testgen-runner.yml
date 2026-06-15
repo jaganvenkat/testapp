@@ -1,0 +1,75 @@
+name: TestGen Tests
+
+on:
+  push:
+    branches: ['**']
+    paths:
+      - '**/*.testgen.test.*'
+      - '**/*.testgen.spec.*'
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      has_unit: ${{ steps.check.outputs.has_unit }}
+      has_e2e: ${{ steps.check.outputs.has_e2e }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect TestGen test files
+        id: check
+        run: |
+          if find . -name "*.testgen.test.*" -not -path "*/node_modules/*" | grep -q .; then
+            echo "has_unit=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_unit=false" >> $GITHUB_OUTPUT
+          fi
+          if find . -name "*.testgen.spec.*" -not -path "*/node_modules/*" | grep -q .; then
+            echo "has_e2e=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_e2e=false" >> $GITHUB_OUTPUT
+          fi
+
+  unit:
+    needs: detect
+    if: needs.detect.outputs.has_unit == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Ensure Jest is installed
+        run: npm list jest --depth=0 2>/dev/null || npm install --save-dev jest ts-jest @types/jest
+
+      - name: Run TestGen unit/integration tests
+        run: npx jest --testPathPattern="\.testgen\.test\." --passWithNoTests
+
+  e2e:
+    needs: detect
+    if: needs.detect.outputs.has_e2e == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run TestGen Playwright tests
+        run: npx playwright test "**/*.testgen.spec.*"
