@@ -17,6 +17,9 @@ describe('useProductSearch initialization', () => {
 })
 
 describe('useProductSearch filtering', () => {
+  beforeEach(() => jest.useFakeTimers())
+  afterEach(() => jest.useRealTimers())
+
   it('TC-002: useProductSearch filters products by search query', () => {
     const products: SearchableProduct[] = [
       { id: '1', name: 'Widget', price: 9.99, category: 'Gadgets' },
@@ -26,9 +29,8 @@ describe('useProductSearch filtering', () => {
 
     const { result } = renderHook(() => useProductSearch(products))
 
-    act(() => {
-      result.current.setQuery('Widget')
-    })
+    act(() => { result.current.setQuery('Widget') })
+    act(() => { jest.runAllTimers() })
 
     expect(result.current.results).toHaveLength(1)
     expect(result.current.results[0].id).toBe('1')
