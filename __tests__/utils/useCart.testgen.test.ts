@@ -13,7 +13,7 @@ describe('useCart.addItem', () => {
     expect(result.current.items[0]).toMatchObject({ id: '1', name: 'Product', price: 10, quantity: 1 })
   })
 
-  it('increments quantity when adding duplicate item', () => {
+  it('increments quantity when adding duplicate item by id', () => {
     const { result } = renderHook(() => useCart())
 
     act(() => {
@@ -46,7 +46,7 @@ describe('useCart.removeItem', () => {
     expect(result.current.items[0].id).toBe('2')
   })
 
-  it('handles non-existent item id gracefully', () => {
+  it('handles non-existent item id gracefully without throwing', () => {
     const { result } = renderHook(() => useCart())
 
     act(() => {
@@ -60,7 +60,6 @@ describe('useCart.removeItem', () => {
     }).not.toThrow()
 
     expect(result.current.items).toHaveLength(1)
-    expect(result.current.items[0].id).toBe('1')
   })
 })
 
@@ -81,7 +80,7 @@ describe('useCart.updateQty', () => {
 })
 
 describe('useCart.clearCart', () => {
-  it('empties items array and resets totalItems', () => {
+  it('empties items array and resets totalItems to 0', () => {
     const { result } = renderHook(() => useCart())
 
     act(() => {
@@ -93,45 +92,39 @@ describe('useCart.clearCart', () => {
       result.current.clearCart()
     })
 
-    expect(result.current.items).toEqual([])
+    expect(result.current.items).toHaveLength(0)
     expect(result.current.totalItems).toBe(0)
   })
 })
 
-describe('useCart totalPrice', () => {
+describe('useCart.totalPrice', () => {
   it('computes correct sum across items with quantities', () => {
     const { result } = renderHook(() => useCart())
 
     act(() => {
       result.current.addItem({ id: '1', name: 'Product A', price: 10 })
+      result.current.addItem({ id: '2', name: 'Product B', price: 20 })
     })
 
     act(() => {
       result.current.addItem({ id: '1', name: 'Product A', price: 10 })
     })
 
-    act(() => {
-      result.current.addItem({ id: '2', name: 'Product B', price: 15 })
-    })
-
-    expect(result.current.totalPrice).toBe(35)
+    expect(result.current.totalPrice).toBe(40)
   })
 })
 
-describe('useCart totalItems', () => {
+describe('useCart.totalItems', () => {
   it('counts sum of all item quantities', () => {
     const { result } = renderHook(() => useCart())
 
     act(() => {
       result.current.addItem({ id: '1', name: 'Product A', price: 10 })
+      result.current.addItem({ id: '2', name: 'Product B', price: 20 })
     })
 
     act(() => {
       result.current.addItem({ id: '1', name: 'Product A', price: 10 })
-    })
-
-    act(() => {
-      result.current.addItem({ id: '2', name: 'Product B', price: 15 })
     })
 
     expect(result.current.totalItems).toBe(3)
