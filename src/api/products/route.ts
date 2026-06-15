@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { validateProduct } from '@/utils/validation'
+import { filterProducts } from '@/utils/products'
 import crypto from 'crypto'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const category = searchParams.get('category')
+  const category = searchParams.get('category') ?? undefined
+  const search   = searchParams.get('search')   ?? undefined
+  const minPrice = searchParams.get('minPrice') ? Number(searchParams.get('minPrice')) : undefined
+  const maxPrice = searchParams.get('maxPrice') ? Number(searchParams.get('maxPrice')) : undefined
 
-  const products = category
-    ? db.products.findByCategory(category)
-    : db.products.list()
+  const all      = db.products.list()
+  const products = filterProducts(all, { category, search, minPrice, maxPrice })
 
   return NextResponse.json({ products })
 }
