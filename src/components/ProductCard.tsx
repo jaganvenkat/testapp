@@ -1,6 +1,7 @@
 'use client'
 
 import { formatCurrency } from '@/utils/formatters'
+import WishlistButton from '@/components/WishlistButton'
 
 interface Product {
   id:           string
@@ -12,11 +13,13 @@ interface Product {
 }
 
 interface Props {
-  product:    Product
-  onAddToCart?: (id: string) => void
+  product:       Product
+  onAddToCart?:  (id: string) => void
+  wishlisted?:   boolean
+  onWishlist?:   (product: Product) => void
 }
 
-export default function ProductCard({ product, onAddToCart }: Props) {
+export default function ProductCard({ product, onAddToCart, wishlisted = false, onWishlist }: Props) {
   const outOfStock = product.stock === 0
 
   return (
@@ -26,9 +29,18 @@ export default function ProductCard({ product, onAddToCart }: Props) {
           <p data-testid="product-name" className="font-semibold text-foreground">{product.name}</p>
           <p data-testid="product-category" className="text-xs text-muted-foreground capitalize">{product.category}</p>
         </div>
-        <p data-testid="product-price" className="font-bold text-indigo-600">
-          {formatCurrency(product.price)}
-        </p>
+        <div className="flex items-center gap-1">
+          {onWishlist && (
+            <WishlistButton
+              wishlisted={wishlisted}
+              onClick={() => onWishlist(product)}
+              label={product.name}
+            />
+          )}
+          <p data-testid="product-price" className="font-bold text-indigo-600">
+            {formatCurrency(product.price)}
+          </p>
+        </div>
       </div>
 
       {product.description && (
