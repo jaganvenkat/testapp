@@ -6,7 +6,14 @@ const config = {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx'],
-  setupFilesAfterFramework: [],
+  setupFilesAfterEnv: ['@testing-library/jest-dom'],
+  globals: {
+    'ts-jest': {
+      tsconfig: {
+        jsx: 'react-jsx',
+      },
+    },
+  },
 }
 
 module.exports = config

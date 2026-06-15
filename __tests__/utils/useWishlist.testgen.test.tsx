@@ -212,7 +212,7 @@ describe('useWishlist', () => {
     const { result } = renderHook(() => useWishlist())
 
     act(() => {
-      result.current.addItem({ id: '1', name: 'Test Product' })
+      result.current.toggle({ id: '1', name: 'Test Product', price: 29.99, category: 'electronics' })
     })
 
     expect(result.current.items).toHaveLength(1)
@@ -223,37 +223,42 @@ describe('useWishlist', () => {
     const { result } = renderHook(() => useWishlist())
 
     act(() => {
-      result.current.addItem({ id: '1', name: 'Product A' })
-      result.current.addItem({ id: '2', name: 'Product B' })
+      result.current.toggle({ id: '1', name: 'Product A', price: 10, category: 'electronics' })
+      result.current.toggle({ id: '2', name: 'Product B', price: 20, category: 'electronics' })
     })
 
     act(() => {
-      result.current.removeItem('1')
+      result.current.remove('1')
     })
 
     expect(result.current.items).toHaveLength(1)
     expect(result.current.items[0].id).toBe('2')
   })
 
-  it('does not add duplicate items', () => {
+  it('removes an item when toggled a second time', () => {
     const { result } = renderHook(() => useWishlist())
 
     act(() => {
-      result.current.addItem({ id: '1', name: 'Test Product' })
-      result.current.addItem({ id: '1', name: 'Test Product' })
+      result.current.toggle({ id: '1', name: 'Test Product', price: 29.99, category: 'electronics' })
     })
 
     expect(result.current.items).toHaveLength(1)
+
+    act(() => {
+      result.current.toggle({ id: '1', name: 'Test Product', price: 29.99, category: 'electronics' })
+    })
+
+    expect(result.current.items).toHaveLength(0)
   })
 
-  it('reports hasItem correctly', () => {
+  it('reports has correctly', () => {
     const { result } = renderHook(() => useWishlist())
 
     act(() => {
-      result.current.addItem({ id: '42', name: 'Special Product' })
+      result.current.toggle({ id: '42', name: 'Special Product', price: 9.99, category: 'books' })
     })
 
-    expect(result.current.hasItem('42')).toBe(true)
-    expect(result.current.hasItem('99')).toBe(false)
+    expect(result.current.has('42')).toBe(true)
+    expect(result.current.has('99')).toBe(false)
   })
 })
