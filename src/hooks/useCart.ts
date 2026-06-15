@@ -37,8 +37,11 @@ export function useCart(): Cart {
   }, [])
 
   const updateQty = useCallback((id: string, quantity: number) => {
-    if (quantity < 1) return
-    setItems(prev => prev.map(i => i.id === id ? { ...i, quantity } : i))
+    if (quantity <= 0) {
+      setItems(prev => prev.filter(i => i.id !== id))
+    } else {
+      setItems(prev => prev.map(i => i.id === id ? { ...i, quantity } : i))
+    }
   }, [])
 
   const clearCart = useCallback(() => setItems([]), [])
