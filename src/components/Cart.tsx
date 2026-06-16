@@ -4,12 +4,13 @@ import { Cart as CartType } from '@/hooks/useCart'
 import { formatCurrency } from '@/utils/formatters'
 
 interface Props {
-  cart:     CartType
-  isOpen:   boolean
-  onClose:  () => void
+  cart:        CartType
+  isOpen:      boolean
+  onClose:     () => void
+  onCheckout?: () => void
 }
 
-export default function Cart({ cart, isOpen, onClose }: Props) {
+export default function Cart({ cart, isOpen, onClose, onCheckout }: Props) {
   if (!isOpen) return null
 
   return (
@@ -87,7 +88,8 @@ export default function Cart({ cart, isOpen, onClose }: Props) {
             </div>
             <button
               data-testid="checkout-button"
-              className="w-full rounded bg-indigo-600 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+              onClick={onCheckout}
+              className="w-full rounded bg-indigo-600 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
             >
               Checkout
             </button>
