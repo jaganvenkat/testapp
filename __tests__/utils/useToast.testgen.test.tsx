@@ -331,3 +331,12 @@ describe('useToast hook', () => {
     expect(typeof useToast).toBe('function')
 
     // Verify useToast behaves the same as useToastContext when used
+    const { result } = renderHook(() => useToast(), { wrapper })
+    act(() => {
+      result.current.addToast('via useToast', 'success')
+    })
+    expect(result.current.toasts).toHaveLength(1)
+    expect(result.current.toasts[0].message).toBe('via useToast')
+    expect(result.current.toasts[0].type).toBe('success')
+  })
+})
