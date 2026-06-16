@@ -1,271 +1,198 @@
-import { renderHook, act } from '@testing-library/react'
-import { render, screen } from '@testing-library/react'
-import React from 'react'
+import { renderHook, act, waitFor } from '@testing-library/react'
 import { useOrders } from '@/hooks/useOrders'
+import { db } from '@/lib/db'
 import type { Order, OrderStatus } from '@/lib/db'
-
-// ---------------------------------------------------------------------------
-// Inline minimal OrderHistory component mirroring the diff exactly
-// ---------------------------------------------------------------------------
-
-const STATUS_STYLES: Record<OrderStatus, string> = {
-  pending:    'bg-yellow-50 text-yellow-700 border-yellow-200',
-  processing: 'bg-blue-50   text-blue-700   border-blue-200',
-  shipped:    'bg-indigo-50 text-indigo-700 border-indigo-200',
-  delivered:  'bg-green-50  text-green-700  border-green-200',
-  cancelled:  'bg-red-50    text-red-700    border-red-200',
-}
-
-// ---------------------------------------------------------------------------
-// Mocks
-// ---------------------------------------------------------------------------
-
-jest.mock('@/hooks/useAuth', () => ({
-  useAuth: jest.fn(),
-}))
-
-jest.mock('@/hooks/useOrders')
-
-jest.mock('@/utils/formatters', () => ({
-  formatCurrency: (amount: number) => `$${amount.toFixed(2)}`,
-  formatDate: (date: Date | string) => String(date),
-  capitalise: (text: string) => text.charAt(0).toUpperCase() + text.slice(1).toLowerCase(),
-}))
-
-import { useAuth } from '@/hooks/useAuth'
-import type { AuthState } from '@/hooks/useAuth'
-import type { OrdersState } from '@/hooks/useOrders'
-
-// ---------------------------------------------------------------------------
-// Inline OrderHistory component (mirrors diff)
-// ---------------------------------------------------------------------------
-
-function OrderHistory() {
-  const { formatCurrency: fc, formatDate: fd, capitalise: cap } = require('@/utils/formatters')
-  const auth: AuthState = useAuth()
-  const { orders, loading, error, refresh }: OrdersState = useOrders(auth.user?.sub ?? null)
-
-  if (!auth.user) {
-    return <p data-testid="unauthenticated">Please log in to view your orders.</p>
-  }
-
-  if (loading) return <p data-testid="loading">Loading…</p>
-  if (error)   return <p data-testid="error">{error}</p>
-
-  return (
-    <div data-testid="order-history">
-      <button onClick={refresh} data-testid="refresh-button">Refresh</button>
-      {orders.length === 0 && <p data-testid="no-orders">No orders found.</p>}
-      {orders.map(order => (
-        <div key={order.id} data-testid={`order-${order.id}`}>
-          <span data-testid={`status-${order.id}`} className={STATUS_STYLES[order.status]}>
-            {cap(order.status)}
-          </span>
-          <span data-testid={`total-${order.id}`}>{fc(order.total)}</span>
-          <span data-testid={`date-${order.id}`}>{fd(order.createdAt)}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const mockUseAuth  = useAuth  as jest.MockedFunction<typeof useAuth>
-const mockUseOrders = useOrders as jest.MockedFunction<typeof useOrders>
-
-function makeAuthState(overrides: Partial<AuthState> = {}): AuthState {
-  return {
-    user:            null,
-    token:           null,
-    isAuthenticated: false,
-    login:           jest.fn(),
-    logout:          jest.fn(),
-    ...overrides,
-  }
-}
-
-function makeOrdersState(overrides: Partial<OrdersState> = {}): OrdersState {
-  return {
-    orders:  [],
-    loading: false,
-    error:   null,
-    refresh: jest.fn(),
-    ...overrides,
-  }
-}
-
-function makeOrder(overrides: Partial<Order> = {}): Order {
+function buildOrder(overrides: Partial<Order> = {}): Order {
   return {
     id:        'order-1',
     userId:    'user-1',
-    items:     [{ productId: 'p1', name: 'Widget', price: 10, quantity: 2 }],
-    total:     20,
-    status:    'pending',
-    createdAt: new Date('2024-01-01'),
+    items:     [],
+    total:     100,
+    status:    'pending' as OrderStatus,
+    createdAt: new Date('2024-01-01T00:00:00.000Z'),
     ...overrides,
   }
 }
 
 // ---------------------------------------------------------------------------
-// Reset mocks between tests
+// Mock fetch globally
 // ---------------------------------------------------------------------------
 
+const mockFetch = jest.fn()
+
+beforeAll(() => {
+  global.fetch = mockFetch as jest.Mock
+})
+
 beforeEach(() => {
-  jest.clearAllMocks()
-  global.fetch = jest.fn()
+  mockFetch.mockReset()
 })
 
 // ---------------------------------------------------------------------------
-// useOrders hook unit tests
+// Tests — useOrders hook
 // ---------------------------------------------------------------------------
 
 describe('useOrders hook', () => {
-  it('TC-001: initializes with null userId and does not fetch', () => {
-    // Unmock useOrders temporarily for this test
-    jest.unmock('@/hooks/useOrders')
-    const { useOrders: realUseOrders } = require('@/hooks/useOrders')
+  it('TC-001: initializes with empty orders and false loading when userId is null', () => {
+    const { result } = renderHook(() => useOrders(null))
 
-    const fetchSpy = jest.spyOn(global, 'fetch')
-
-    const { result } = renderHook(() => realUseOrders(null))
-
-    expect(fetchSpy).not.toHaveBeenCalled()
     expect(result.current.orders).toEqual([])
     expect(result.current.loading).toBe(false)
     expect(result.current.error).toBeNull()
-
-    // Re-mock for subsequent tests
-    jest.mock('@/hooks/useOrders')
   })
 
-  it('TC-002: calls fetch on mount with valid userId', async () => {
-    jest.unmock('@/hooks/useOrders')
-    const { useOrders: realUseOrders } = require('@/hooks/useOrders')
+  it('TC-002: calls fetch with correct encoded userId query parameter on mount', async () => {
+    const userId = 'user abc'
+    const orders = [buildOrder({ userId })]
 
-    const ordersData: Order[] = [makeOrder()]
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+    mockFetch.mockResolvedValueOnce({
       ok:   true,
-      json: async () => ({ orders: ordersData }),
+      json: () => Promise.resolve({ orders }),
     } as Response)
 
-    const { result } = renderHook(() => realUseOrders('user-1'))
+    const { result } = renderHook(() => useOrders(userId))
 
-    expect(fetchSpy).toHaveBeenCalledWith(
-      `/api/orders?userId=${encodeURIComponent('user-1')}`,
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    expect(mockFetch).toHaveBeenCalledWith(
+      `/api/orders?userId=${encodeURIComponent(userId)}`
     )
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0))
-    })
-
-    expect(result.current.orders).toEqual(ordersData)
-    expect(result.current.loading).toBe(false)
-    expect(result.current.error).toBeNull()
-
-    jest.mock('@/hooks/useOrders')
   })
 
-  it('TC-003: exposes refresh() to manually trigger re-fetch', async () => {
-    jest.unmock('@/hooks/useOrders')
-    const { useOrders: realUseOrders } = require('@/hooks/useOrders')
-
-    const ordersData: Order[] = [makeOrder()]
-    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
-      ok:   true,
-      json: async () => ({ orders: ordersData }),
-    } as Response)
-
-    const { result } = renderHook(() => realUseOrders('user-1'))
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0))
-    })
-
-    expect(fetchSpy).toHaveBeenCalledTimes(1)
-
-    await act(async () => {
-      result.current.refresh()
-      await new Promise(resolve => setTimeout(resolve, 0))
-    })
-
-    expect(fetchSpy).toHaveBeenCalledTimes(2)
-    expect(fetchSpy).toHaveBeenLastCalledWith(
-      `/api/orders?userId=${encodeURIComponent('user-1')}`,
-    )
-
-    jest.mock('@/hooks/useOrders')
-  })
-
-  it('TC-004: handles API error response and sets error state', async () => {
-    jest.unmock('@/hooks/useOrders')
-    const { useOrders: realUseOrders } = require('@/hooks/useOrders')
-
-    jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+  it('TC-003: handles fetch failure and sets error message', async () => {
+    mockFetch.mockResolvedValueOnce({
       ok:   false,
-      json: async () => ({ error: 'Failed to load orders' }),
+      json: () => Promise.resolve({}),
     } as Response)
 
-    const { result } = renderHook(() => realUseOrders('user-1'))
+    const { result } = renderHook(() => useOrders('user-1'))
 
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 0))
-    })
+    await waitFor(() => expect(result.current.loading).toBe(false))
 
     expect(result.current.error).toBe('Failed to load orders')
     expect(result.current.orders).toEqual([])
-    expect(result.current.loading).toBe(false)
+  })
 
-    jest.mock('@/hooks/useOrders')
+  it('TC-004: refresh function triggers new fetch and resets loading/error state', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok:   false,
+      json: () => Promise.resolve({}),
+    } as Response)
+
+    const { result } = renderHook(() => useOrders('user-1'))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.error).toBe('Failed to load orders')
+
+    const freshOrders = [buildOrder()]
+    mockFetch.mockResolvedValueOnce({
+      ok:   true,
+      json: () => Promise.resolve({ orders: freshOrders }),
+    } as Response)
+
+    act(() => {
+      result.current.refresh()
+    })
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.error).toBeNull()
+    expect(result.current.orders).toEqual(freshOrders)
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('TC-005: parses response JSON and extracts orders array', async () => {
+    const orders = [
+      buildOrder({ id: 'order-1' }),
+      buildOrder({ id: 'order-2', status: 'shipped' }),
+    ]
+
+    mockFetch.mockResolvedValueOnce({
+      ok:   true,
+      json: () => Promise.resolve({ orders }),
+    } as Response)
+
+    const { result } = renderHook(() => useOrders('user-1'))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(result.current.orders).toHaveLength(2)
+    expect(result.current.orders[0].id).toBe('order-1')
+    expect(result.current.orders[1].id).toBe('order-2')
+    expect(result.current.error).toBeNull()
+  })
+
+  it('TC-006: refetches when userId dependency changes', async () => {
+    const ordersForUser1 = [buildOrder({ id: 'o1', userId: 'user-1' })]
+    const ordersForUser2 = [buildOrder({ id: 'o2', userId: 'user-2' })]
+
+    mockFetch.mockResolvedValueOnce({
+      ok:   true,
+      json: () => Promise.resolve({ orders: ordersForUser1 }),
+    } as Response)
+
+    const { result, rerender } = renderHook(({ userId }) => useOrders(userId), {
+      initialProps: { userId: 'user-1' as string | null },
+    })
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.orders).toEqual(ordersForUser1)
+
+    mockFetch.mockResolvedValueOnce({
+      ok:   true,
+      json: () => Promise.resolve({ orders: ordersForUser2 }),
+    } as Response)
+
+    rerender({ userId: 'user-2' })
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      `/api/orders?userId=${encodeURIComponent('user-2')}`
+    )
+    expect(result.current.orders).toEqual(ordersForUser2)
   })
 })
 
-// ---------------------------------------------------------------------------
-// OrderHistory component unit tests
-// ---------------------------------------------------------------------------
+describe('db.orders.findByUserId', () => {
+  it('TC-007: returns orders sorted by createdAt descending', () => {
+    const older  = buildOrder({ id: 'older',  createdAt: new Date('2024-01-01T00:00:00.000Z') })
+    const newer  = buildOrder({ id: 'newer',  createdAt: new Date('2024-06-01T00:00:00.000Z') })
+    const middle = buildOrder({ id: 'middle', createdAt: new Date('2024-03-01T00:00:00.000Z') })
 
-describe('OrderHistory component', () => {
-  it('TC-009: renders unauthenticated state when user is null', () => {
-    mockUseAuth.mockReturnValue(makeAuthState({ user: null }))
-    mockUseOrders.mockReturnValue(makeOrdersState())
+    db.orders.create(older)
+    db.orders.create(newer)
+    db.orders.create(middle)
 
-    render(<OrderHistory />)
+    const found = db.orders.findByUserId('user-1')
 
-    expect(screen.getByTestId('unauthenticated')).toBeInTheDocument()
-    expect(screen.getByTestId('unauthenticated')).toHaveTextContent(
-      'Please log in to view your orders.',
-    )
+    const ids = found.map(o => o.id)
+    expect(ids.indexOf('newer')).toBeLessThan(ids.indexOf('middle'))
+    expect(ids.indexOf('middle')).toBeLessThan(ids.indexOf('older'))
   })
+})
 
-  it('TC-010: applies correct STATUS_STYLES color for each OrderStatus', () => {
-    const statuses: OrderStatus[] = ['pending', 'processing', 'shipped', 'delivered', 'cancelled']
+describe('db.orders.update', () => {
+  it('TC-008: modifies existing order and persists state', () => {
+    const order = buildOrder({ id: 'update-test', status: 'pending', total: 50 })
+    db.orders.create(order)
 
-    const orders: Order[] = statuses.map((status, i) =>
-      makeOrder({ id: `order-${i}`, status }),
-    )
+    const updated = db.orders.update('update-test', { status: 'shipped', total: 75 })
 
-    mockUseAuth.mockReturnValue(
-      makeAuthState({
-        user:            { sub: 'user-1', email: 'user@example.com', role: 'user', iat: 0, exp: 9999999999 },
-        isAuthenticated: true,
-        token:           'fake-token',
-      }),
-    )
-    mockUseOrders.mockReturnValue(makeOrdersState({ orders }))
+    expect(updated).not.toBeNull()
+    expect(updated!.status).toBe('shipped')
+    expect(updated!.total).toBe(75)
 
-    render(<OrderHistory />)
-
-    statuses.forEach((status, i) => {
-      const statusEl = screen.getByTestId(`status-order-${i}`)
-      expect(statusEl).toHaveClass(STATUS_STYLES[status].split(' ')[0])
-    })
-
-    expect(STATUS_STYLES['pending']).toContain('yellow')
-    expect(STATUS_STYLES['processing']).toContain('blue')
-    expect(STATUS_STYLES['shipped']).toContain('indigo')
-    expect(STATUS_STYLES['delivered']).toContain('green')
-    expect(STATUS_STYLES['cancelled']).toContain('red')
+    const fetched = db.orders.findById('update-test')
+    expect(fetched).not.toBeNull()
+    expect(fetched!.status).toBe('shipped')
+    expect(fetched!.total).toBe(75)
   })
 })
