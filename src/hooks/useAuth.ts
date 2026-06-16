@@ -30,11 +30,14 @@ export function useAuth(): AuthState {
   useEffect(() => {
     const stored = localStorage.getItem(TOKEN_KEY)
     if (stored && !isTokenExpired(stored)) {
-      setToken(stored)
-      setUser(parseToken(stored))
-    } else {
-      localStorage.removeItem(TOKEN_KEY)
+      const parsed = parseToken(stored)
+      if (parsed) {
+        setToken(stored)
+        setUser(parsed)
+        return
+      }
     }
+    localStorage.removeItem(TOKEN_KEY)
   }, [])
 
   const login = useCallback(async (email: string, password: string) => {
