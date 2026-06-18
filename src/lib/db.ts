@@ -17,9 +17,22 @@ export interface Product {
   createdAt:   Date
 }
 
+export type NotificationType = 'info' | 'success' | 'warning' | 'error'
+
+export interface Notification {
+  id:        string
+  userId:    string
+  title:     string
+  body:      string
+  type:      NotificationType
+  read:      boolean
+  createdAt: Date
+}
+
 // In-memory store for demo — replace with real DB in production
-const users    = new Map<string, User>()
-const products = new Map<string, Product>()
+const users         = new Map<string, User>()
+const products      = new Map<string, Product>()
+const notifications = new Map<string, Notification>()
 
 export const db = {
   users: {
@@ -51,5 +64,25 @@ export const db = {
     },
     delete: (id: string) => products.delete(id),
     list: () => [...products.values()],
+  },
+  notifications: {
+    findByUserId: (userId: string) =>
+      [...notifications.values()]
+        .filter(n => n.userId === userId)
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
+    create: (n: Notification) => { notifications.set(n.id, n); return n },
+    markRead: (id: string) => {
+      const n = notifications.get(id)
+      if (!n) return null
+      const updated = { ...n, read: true }
+      notifications.set(id, updated)
+      return updated
+    },
+    markAllRead: (userId: string) => {
+      for (const [id, n] of notifications) {
+        if (n.userId === userId) notifications.set(id, { ...n, read: true })
+      }
+    },
+    delete: (id: string) => notifications.delete(id),
   },
 }
