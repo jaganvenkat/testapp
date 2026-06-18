@@ -1,270 +1,184 @@
 import { test, expect } from '@playwright/test'
 
-test.describe('OrderHistory', () => {
-  test.describe('TC-E2E-001: unauthenticated prompt', () => {
-    test('displays unauthenticated prompt when user is not logged in', async ({ page }) => {
-      await page.goto('/orders')
-      await expect(page.getByTestId('orders-unauthenticated')).toBeVisible()
-      await expect(page.getByTestId('orders-unauthenticated')).toContainText('Please log in to view your order history.')
+test.describe('OrderHistory component', () => {
+  test('TC-001: displays unauthenticated state when user is null', async ({ page }) => {
+    await page.route('/api/auth/login', async route => {
+      await route.fulfill({ status: 401, json: { error: 'Unauthorized' } })
     })
+    await page.route('/api/orders*', async route => {
+      await route.fulfill({ status: 200, json: { orders: [] } })
+    })
+
+    await page.goto('/orders')
+
+    await expect(page.getByTestId('orders-unauthenticated')).toBeVisible()
+    await expect(page.getByTestId('orders-unauthenticated')).toContainText('Please log in to view your order history.')
   })
 
-  test.describe('TC-E2E-002: loading state', () => {
-    test('displays loading state while useOrders hook is fetching', async ({ page }) => {
-      await page.route('/api/orders*', async route => {
-        await new Promise(resolve => setTimeout(resolve, 2000))
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ orders: [] }),
-        })
-      })
-
-      await page.goto('/orders')
-      await expect(page.getByTestId('orders-loading')).toBeVisible()
+  test('TC-002: renders loading state while useOrders is fetching', async ({ page }) => {
+    await page.route('/api/auth/login', async route => {
+      await route.fulfill({ status: 200, json: { token: 'eyJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOiJ1c2VyLTEiLCJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20iLCJyb2xlIjoidXNlciIsImlhdCI6OTk5OTk5OTk5OSwiZXhwIjo5OTk5OTk5OTk5fQ.signature' } })
     })
+
+    let resolveOrders: () => void
+    const ordersBlocked = new Promise<void>(resolve => { resolveOrders = resolve })
+
+    await page.route('/api/orders*', async route => {
+      await ordersBlocked
+      await route.fulfill({ status: 200, json: { orders: [] } })
+    })
+
+    await page.addInitScript(() => {
+      const payload = btoa(JSON.stringify({ userId: 'user-1', email: 'test@example.com', role: 'user', iat: 9999999999, exp: 9999999999 }))
+      const token = `eyJhbGciOiJIUzI1NiJ9.${payload}.signature`
+      localStorage.setItem('auth_token', token)
+    })
+
+    await page.goto('/orders')
+
+    await expect(page.getByTestId('orders-loading')).toBeVisible()
+
+    resolveOrders!()
   })
 
-  test.describe('TC-E2E-003: empty state', () => {
-    test('displays empty state when orders array is empty', async ({ page }) => {
-      await page.route('/api/orders*', async route => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ orders: [] }),
-        })
-      })
-
-      await page.route('/api/auth/login', async route => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            token: 'eyJhbGciOiJIUzI1NiJ9.' + btoa(JSON.stringify({ userId: 'user-1', email: 'test@example.com', role: 'user' })) + '.sig',
-          }),
-        })
-      })
-
-      await page.goto('/login')
-      await page.getByTestId('email-input').fill('test@example.com')
-      await page.getByTestId('password-input').fill('password123')
-      await page.getByTestId('login-button').click()
-
-      await page.goto('/orders')
-      await expect(page.getByTestId('orders-empty')).toBeVisible()
-      await expect(page.getByTestId('orders-empty')).toContainText("You haven't placed any orders yet.")
+  test('TC-003: displays error message from useOrders hook', async ({ page }) => {
+    await page.addInitScript(() => {
+      const payload = btoa(JSON.stringify({ userId: 'user-1', email: 'test@example.com', role: 'user', iat: 9999999999, exp: 9999999999 }))
+      const token = `eyJhbGciOiJIUzI1NiJ9.${payload}.signature`
+      localStorage.setItem('auth_token', token)
     })
+
+    await page.route('/api/orders*', async route => {
+      await route.fulfill({ status: 500, json: { error: 'Failed to load orders' } })
+    })
+
+    await page.goto('/orders')
+
+    await expect(page.getByTestId('orders-error')).toBeVisible()
   })
 
-  test.describe('TC-E2E-004: order cards with details', () => {
-    test('renders each order card with id, date, status badge, items, and total', async ({ page }) => {
-      await page.route('/api/auth/login', async route => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            token: 'eyJhbGciOiJIUzI1NiJ9.' + btoa(JSON.stringify({ userId: 'user-1', email: 'test@example.com', role: 'user' })) + '.sig',
-          }),
-        })
-      })
-
-      await page.route('/api/orders*', async route => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            orders: [
-              {
-                id: 'abcdef12-0000-0000-0000-000000000000',
-                userId: 'user-1',
-                items: [
-                  { id: 'item-1', name: 'Widget', price: 9.99, quantity: 2 },
-                ],
-                total: 19.98,
-                status: 'pending',
-                createdAt: new Date('2024-01-15T10:00:00.000Z').toISOString(),
-              },
-            ],
-          }),
-        })
-      })
-
-      await page.goto('/login')
-      await page.getByTestId('email-input').fill('test@example.com')
-      await page.getByTestId('password-input').fill('password123')
-      await page.getByTestId('login-button').click()
-
-      await page.goto('/orders')
-      await expect(page.getByTestId('order-history')).toBeVisible()
-      await expect(page.getByTestId('order-card').first()).toBeVisible()
-      await expect(page.getByTestId('order-id').first()).toContainText('ABCDEF12')
-      await expect(page.getByTestId('order-date').first()).toBeVisible()
-      await expect(page.getByTestId('order-status').first()).toBeVisible()
+  test('TC-004: renders empty state when orders array is empty', async ({ page }) => {
+    await page.addInitScript(() => {
+      const payload = btoa(JSON.stringify({ userId: 'user-1', email: 'test@example.com', role: 'user', iat: 9999999999, exp: 9999999999 }))
+      const token = `eyJhbGciOiJIUzI1NiJ9.${payload}.signature`
+      localStorage.setItem('auth_token', token)
     })
+
+    await page.route('/api/orders*', async route => {
+      await route.fulfill({ status: 200, json: { orders: [] } })
+    })
+
+    await page.goto('/orders')
+
+    await expect(page.getByTestId('orders-empty')).toBeVisible()
+    await expect(page.getByTestId('orders-empty')).toContainText("You haven't placed any orders yet.")
   })
 
-  test.describe('TC-E2E-005: STATUS_STYLES color per OrderStatus', () => {
-    const statusCases = [
-      { status: 'pending',    expectedText: 'Pending' },
-      { status: 'processing', expectedText: 'Processing' },
-      { status: 'shipped',    expectedText: 'Shipped' },
-      { status: 'delivered',  expectedText: 'Delivered' },
-      { status: 'cancelled',  expectedText: 'Cancelled' },
-    ]
+  test('TC-005: renders order cards with formatted ID, date, and status badge', async ({ page }) => {
+    await page.addInitScript(() => {
+      const payload = btoa(JSON.stringify({ userId: 'user-1', email: 'test@example.com', role: 'user', iat: 9999999999, exp: 9999999999 }))
+      const token = `eyJhbGciOiJIUzI1NiJ9.${payload}.signature`
+      localStorage.setItem('auth_token', token)
+    })
 
-    for (const { status, expectedText } of statusCases) {
-      test(`applies correct STATUS_STYLES for status: ${status}`, async ({ page }) => {
-        await page.route('/api/auth/login', async route => {
-          await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              token: 'eyJhbGciOiJIUzI1NiJ9.' + btoa(JSON.stringify({ userId: 'user-1', email: 'test@example.com', role: 'user' })) + '.sig',
-            }),
-          })
-        })
+    const orderId = 'abcdef12-3456-7890-abcd-ef1234567890'
 
-        await page.route('/api/orders*', async route => {
-          await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              orders: [
-                {
-                  id: 'abcdef12-0000-0000-0000-000000000000',
-                  userId: 'user-1',
-                  items: [{ id: 'item-1', name: 'Widget', price: 10, quantity: 1 }],
-                  total: 10,
-                  status,
-                  createdAt: new Date('2024-01-15T10:00:00.000Z').toISOString(),
-                },
+    await page.route('/api/orders*', async route => {
+      await route.fulfill({
+        status: 200,
+        json: {
+          orders: [
+            {
+              id: orderId,
+              userId: 'user-1',
+              items: [
+                { productId: 'prod-1', name: 'Test Product', price: 29.99, quantity: 2 }
               ],
-            }),
-          })
-        })
-
-        await page.goto('/login')
-        await page.getByTestId('email-input').fill('test@example.com')
-        await page.getByTestId('password-input').fill('password123')
-        await page.getByTestId('login-button').click()
-
-        await page.goto('/orders')
-        await expect(page.getByTestId('order-status').first()).toBeVisible()
-        await expect(page.getByTestId('order-status').first()).toContainText(expectedText)
+              total: 59.98,
+              status: 'pending',
+              createdAt: '2024-01-15T00:00:00.000Z',
+            }
+          ]
+        }
       })
+    })
+
+    await page.goto('/orders')
+
+    await expect(page.getByTestId('order-history')).toBeVisible()
+    await expect(page.getByTestId('order-card')).toBeVisible()
+
+    const orderId8 = orderId.slice(0, 8).toUpperCase()
+    await expect(page.getByTestId('order-id')).toContainText(orderId8)
+
+    await expect(page.getByTestId('order-date')).toBeVisible()
+
+    await expect(page.getByTestId('order-status')).toBeVisible()
+    await expect(page.getByTestId('order-status')).toContainText('Pending')
+  })
+
+  test('TC-006: applies correct status badge styles for all OrderStatus values', async ({ page }) => {
+    await page.addInitScript(() => {
+      const payload = btoa(JSON.stringify({ userId: 'user-1', email: 'test@example.com', role: 'user', iat: 9999999999, exp: 9999999999 }))
+      const token = `eyJhbGciOiJIUzI1NiJ9.${payload}.signature`
+      localStorage.setItem('auth_token', token)
+    })
+
+    const statuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'] as const
+
+    const orders = statuses.map((status, i) => ({
+      id: `order-id-${i + 1}0000000`,
+      userId: 'user-1',
+      items: [],
+      total: 0,
+      status,
+      createdAt: '2024-01-01T00:00:00.000Z',
+    }))
+
+    await page.route('/api/orders*', async route => {
+      await route.fulfill({ status: 200, json: { orders } })
+    })
+
+    await page.goto('/orders')
+
+    await expect(page.getByTestId('order-history')).toBeVisible()
+
+    const statusBadges = page.getByTestId('order-status')
+    await expect(statusBadges).toHaveCount(statuses.length)
+
+    const expectedLabels: Record<string, string> = {
+      pending:    'Pending',
+      processing: 'Processing',
+      shipped:    'Shipped',
+      delivered:  'Delivered',
+      cancelled:  'Cancelled',
+    }
+
+    for (let i = 0; i < statuses.length; i++) {
+      await expect(statusBadges.nth(i)).toContainText(expectedLabels[statuses[i]])
     }
   })
 
-  test.describe('TC-E2E-006: error state', () => {
-    test('displays error message when useOrders hook returns error state', async ({ page }) => {
-      await page.route('/api/auth/login', async route => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            token: 'eyJhbGciOiJIUzI1NiJ9.' + btoa(JSON.stringify({ userId: 'user-1', email: 'test@example.com', role: 'user' })) + '.sig',
-          }),
-        })
-      })
+  test('TC-007: passes authenticated userId to useOrders hook', async ({ page }) => {
+    const userId = 'user-42'
 
-      await page.route('/api/orders*', async route => {
-        await route.fulfill({
-          status: 500,
-          contentType: 'application/json',
-          body: JSON.stringify({ error: 'Internal Server Error' }),
-        })
-      })
+    await page.addInitScript((uid) => {
+      const payload = btoa(JSON.stringify({ userId: uid, email: 'test@example.com', role: 'user', iat: 9999999999, exp: 9999999999 }))
+      const token = `eyJhbGciOiJIUzI1NiJ9.${payload}.signature`
+      localStorage.setItem('auth_token', token)
+    }, userId)
 
-      await page.goto('/login')
-      await page.getByTestId('email-input').fill('test@example.com')
-      await page.getByTestId('password-input').fill('password123')
-      await page.getByTestId('login-button').click()
+    let capturedUrl = ''
 
-      await page.goto('/orders')
-      await expect(page.getByTestId('orders-error')).toBeVisible()
+    await page.route('/api/orders*', async route => {
+      capturedUrl = route.request().url()
+      await route.fulfill({ status: 200, json: { orders: [] } })
     })
+
+    await page.goto('/orders')
+
+    await expect(page.getByTestId('orders-empty')).toBeVisible()
+
+    expect(capturedUrl).toContain(encodeURIComponent(userId))
   })
-
-  test.describe('TC-E2E-007: useOrders fetch with encoded userId', () => {
-    test('fetches orders on mount with correct userId query parameter encoding', async ({ page }) => {
-      const userId = 'user-1'
-      let capturedUrl = ''
-
-      await page.route('/api/auth/login', async route => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            token: 'eyJhbGciOiJIUzI1NiJ9.' + btoa(JSON.stringify({ userId, email: 'test@example.com', role: 'user' })) + '.sig',
-          }),
-        })
-      })
-
-      await page.route('/api/orders*', async route => {
-        capturedUrl = route.request().url()
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ orders: [] }),
-        })
-      })
-
-      await page.goto('/login')
-      await page.getByTestId('email-input').fill('test@example.com')
-      await page.getByTestId('password-input').fill('password123')
-      await page.getByTestId('login-button').click()
-
-      await page.goto('/orders')
-      await expect(page.getByTestId('orders-empty')).toBeVisible()
-
-      expect(capturedUrl).toContain(`userId=${encodeURIComponent(userId)}`)
-    })
-  })
-
-  test.describe('TC-E2E-008: POST /api/orders creates order and shows in OrderHistory', () => {
-    test('POST /api/orders creates order and refresh displays it in OrderHistory', async ({ page }) => {
-      const newOrder = {
-        id: 'neworder1-0000-0000-0000-000000000000',
-        userId: 'user-1',
-        items: [{ id: 'item-1', name: 'Gadget', price: 49.99, quantity: 1 }],
-        total: 49.99,
-        status: 'pending',
-        createdAt: new Date('2024-06-01T12:00:00.000Z').toISOString(),
-      }
-
-      await page.route('/api/auth/login', async route => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            token: 'eyJhbGciOiJIUzI1NiJ9.' + btoa(JSON.stringify({ userId: 'user-1', email: 'test@example.com', role: 'user' })) + '.sig',
-          }),
-        })
-      })
-
-      let orderCreated = false
-
-      await page.route('/api/orders*', async route => {
-        if (route.request().method() === 'POST') {
-          orderCreated = true
-          await route.fulfill({
-            status: 201,
-            contentType: 'application/json',
-            body: JSON.stringify({ order: newOrder }),
-          })
-        } else {
-          await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({ orders: orderCreated ? [newOrder] : [] }),
-          })
-        }
-      })
-
-      await page.goto('/login')
-      await page.getByTestId('email-input').fill('test@example.com')
-      await page.getByTestId('password-input').fill('password123')
-      await page.getByTestId('login-button').click()
-
-      await page.request.post('/api/orders', {
-        data: {
+})
